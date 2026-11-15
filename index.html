@@ -305,7 +305,10 @@ body.revealed #catsActor{opacity:1}
   width:100%;height:100%;
   object-fit:contain;
   opacity:0;
-  transition:opacity .28s ease, transform .3s ease;
+  transition:opacity .12s ease, transform .25s ease;
+}
+#catsActor[data-mode="walk"] .cats-rig img{
+  transition:opacity 0s; /* instant crisp frame swap during walk cycle — prevents ghostly double-paws on fast scroll */
 }
 .cats-rig img.active{
   opacity:1;
@@ -351,11 +354,20 @@ body.revealed #catsActor{opacity:1}
 
 /* Walking bounce & waddle */
 #catsActor[data-mode="walk"] .cats-rig{
-  animation:catWalkBounce .36s ease-in-out infinite alternate;
+  animation:catWalkBounce var(--walk-dur, .34s) ease-in-out infinite alternate;
 }
 @keyframes catWalkBounce{
-  0%{transform:translateY(0) rotate(-4deg) scale(1.03,.97)}
-  100%{transform:translateY(-11px) rotate(4deg) scale(.97,1.04)}
+  0%{transform:translateY(0) rotate(-3.5deg) scale(1.02,.98)}
+  100%{transform:translateY(-9px) rotate(3.5deg) scale(.98,1.03)}
+}
+
+/* Rapid full-screen scroll: expressive parabolic LEAP / POUNCE arc! */
+#catsActor[data-mode="leap"] .cats-rig{
+  animation:catLeapArc .42s cubic-bezier(.22,.68,.35,1.2) infinite alternate;
+}
+@keyframes catLeapArc{
+  0%{transform:translateY(-22px) scale(.94,1.08) rotate(-4deg)}
+  100%{transform:translateY(-34px) scale(1.06,.94) rotate(4deg)}
 }
 
 /* Sangeet party dance animation! */
@@ -567,12 +579,12 @@ h2{
    ========================================================= */
 .event-scene{
   position:relative;
-  min-height:112vh;
+  min-height:108vh;
   display:flex;
   flex-direction:column;
   justify-content:flex-start;
   align-items:center;
-  padding:72px 22px 245px; /* generous bottom room so corner/dancing cats + speech bubble never touch the card */
+  padding:42px 22px 235px; /* card sits higher at top so cats + bubble fit completely below the card without covering Venue */
   overflow:hidden;
 }
 
@@ -1584,12 +1596,16 @@ const CatJourney = (()=>{
   let walkDistance = 0;
   let idleTimer = null;
 
-  // Smooth spring-lerp state so the cats never snap/jump between points
+  // Smooth velocity-adaptive state (supports normal walk, brisk trot, and full-screen leap!)
   let targetArcLen = 0;
   let currentArcLen = 0;
   let rafId = null;
   let goalStation = null;
   let goalWalkingMsg = "FOLLOW US 🐾";
+  let lastFrameTime = performance.now();
+  let lastStepToggleTime = 0;
+  let stepToggleState = false;
+  let isRapidLeap = false;
 
   function showPose(name){
     if (currentPose === name) return;
@@ -1618,10 +1634,14 @@ const CatJourney = (()=>{
     const rightX = Math.min(W - 82, W * 0.79);
     const midX   = W * 0.50;
 
-    // 5 Key Stations (plus intermediate curve control points through the family invite)
+    const heroCardBottom = heroEl.offsetTop + heroEl.offsetHeight - 78;
+    const haldiCard = haldiEl.querySelector(".event-card-central");
+    const mehendiCard = mehendiEl.querySelector(".event-card-central");
+
+    // 5 Key Stations (anchored right at the bottom-corner of the event card so all 3 cats are 100% visible when the card is on screen!)
     const p0 = { // Scene 1: Bottom-left corner of Opening Hero
       x: leftX,
-      y: heroEl.offsetTop + heroEl.offsetHeight - 78,
+      y: heroCardBottom,
       station: "hero"
     };
     const pInvite = { // Winding curve through the family section
@@ -1629,19 +1649,19 @@ const CatJourney = (()=>{
       y: inviteEl.offsetTop + inviteEl.offsetHeight * 0.52,
       station: "walk"
     };
-    const p1 = { // Scene 2: Bottom-right corner of Haldi (well below the Haldi card)
+    const p1 = { // Scene 2: Bottom-right corner of Haldi (anchored 145px below the Haldi card so cats + bubble sit completely below [Venue Name])
       x: rightX,
-      y: haldiEl.offsetTop + haldiEl.offsetHeight - 62,
+      y: haldiEl.offsetTop + (haldiCard ? haldiCard.offsetTop + haldiCard.offsetHeight + 145 : haldiEl.offsetHeight - 85),
       station: "haldi"
     };
-    const p2 = { // Scene 3: Bottom-left corner of Mehendi (well below the Mehendi card)
+    const p2 = { // Scene 3: Bottom-left corner of Mehendi (anchored 145px below the Mehendi card so cats + bubble sit completely below [Venue Name])
       x: leftX,
-      y: mehendiEl.offsetTop + mehendiEl.offsetHeight - 62,
+      y: mehendiEl.offsetTop + (mehendiCard ? mehendiCard.offsetTop + mehendiCard.offsetHeight + 145 : mehendiEl.offsetHeight - 85),
       station: "mehendi"
     };
     const p3 = { // Scene 4: Center dancefloor of Sangeet (well below the Sangeet card)
       x: midX,
-      y: sangeetEl.offsetTop + danceSpot.offsetTop + 36,
+      y: sangeetEl.offsetTop + danceSpot.offsetTop + 18,
       station: "sangeet"
     };
     const p4 = { // Scene 5: Top-right corner of Main Wedding scene (above the Mandap card)
@@ -1698,10 +1718,10 @@ const CatJourney = (()=>{
     // Stations with dwell zones (in px around the waypoint's Y):
     const stations = [
       { idx: 0, name: "hero",    pose: "original", mode: "idle",  dwell: 95,  theme: "lotus",   msg: "SCROLL WITH US 🐾" },
-      { idx: 2, name: "haldi",   pose: "haldi",    mode: "idle",  dwell: 120, theme: "haldi",   msg: "HALDI READY! 🌼" },
-      { idx: 3, name: "mehendi", pose: "mehendi",  mode: "idle",  dwell: 120, theme: "mehendi", msg: "MEHENDI VIBES 🌿" },
-      { idx: 4, name: "sangeet", pose: "sangeet",  mode: "dance", dwell: 115, theme: "sangeet", msg: "LET'S DANCE! 🪩✨" },
-      { idx: 5, name: "wedding", pose: "wedding",  mode: "idle",  dwell: 140, theme: "wedding", msg: "SHUBH VIVAH 💐" }
+      { idx: 2, name: "haldi",   pose: "haldi",    mode: "idle",  dwell: 175, theme: "haldi",   msg: "HALDI READY! 🌼" },
+      { idx: 3, name: "mehendi", pose: "mehendi",  mode: "idle",  dwell: 175, theme: "mehendi", msg: "MEHENDI VIBES 🌿" },
+      { idx: 4, name: "sangeet", pose: "sangeet",  mode: "dance", dwell: 165, theme: "sangeet", msg: "LET'S DANCE! 🪩✨" },
+      { idx: 5, name: "wedding", pose: "wedding",  mode: "idle",  dwell: 170, theme: "wedding", msg: "SHUBH VIVAH 💐" }
     ];
 
     // Before scrolling at all, keep cats at Scene 1 bottom corner
@@ -1730,110 +1750,156 @@ const CatJourney = (()=>{
 
     const scrollDelta = Math.abs(sy - lastScrollY);
     lastScrollY = sy;
-    walkDistance += scrollDelta;
 
     if (matchedStation){
       targetArcLen = pathLengths[matchedStation.idx];
       goalStation = matchedStation;
       Petals.setTheme(matchedStation.theme);
-      if (forceStation){ currentArcLen = targetArcLen; renderActorFrame(); }
-      else ensureTick();
-      return;
-    }
-
-    // Otherwise, the cats are between stations along the path
-    goalStation = null;
-    let nextLen = 0;
-    let nextMsg = "FOLLOW US 🐾";
-
-    if (focusY < waypoints[0].y + 95){
-      nextLen = 0;
-    } else if (focusY >= waypoints[5].y){
-      nextLen = totalLen;
     } else {
-      const segs = [
-        { yA: waypoints[0].y + 95,  yB: waypoints[2].y - 120, lA: pathLengths[0], lB: pathLengths[2], msg: "OFF TO HALDI! 🌼" },
-        { yA: waypoints[2].y + 120, yB: waypoints[3].y - 120, lA: pathLengths[2], lB: pathLengths[3], msg: "TO MEHENDI! 🌿" },
-        { yA: waypoints[3].y + 120, yB: waypoints[4].y - 115, lA: pathLengths[3], lB: pathLengths[4], msg: "PARTY TIME! 🪩" },
-        { yA: waypoints[4].y + 115, yB: waypoints[5].y,       lA: pathLengths[4], lB: pathLengths[5], msg: "TO THE MANDAP! 💐" }
-      ];
-      for (const s of segs){
-        if (focusY >= s.yA && focusY <= s.yB){
-          const t = (focusY - s.yA) / Math.max(1, s.yB - s.yA);
-          // Smooth ease-in-out curve along the segment
-          const smoothT = t * t * (3 - 2 * t);
-          nextLen = s.lA + smoothT * (s.lB - s.lA);
-          nextMsg = s.msg;
-          break;
+      // Otherwise, the cats are between stations along the path
+      goalStation = null;
+      let nextLen = 0;
+      let nextMsg = "FOLLOW US 🐾";
+
+      if (focusY < waypoints[0].y + 95){
+        nextLen = 0;
+      } else if (focusY >= waypoints[5].y){
+        nextLen = totalLen;
+      } else {
+        const segs = [
+          { yA: waypoints[0].y + 95,  yB: waypoints[2].y - 175, lA: pathLengths[0], lB: pathLengths[2], msg: "OFF TO HALDI! 🌼" },
+          { yA: waypoints[2].y + 175, yB: waypoints[3].y - 175, lA: pathLengths[2], lB: pathLengths[3], msg: "TO MEHENDI! 🌿" },
+          { yA: waypoints[3].y + 175, yB: waypoints[4].y - 165, lA: pathLengths[3], lB: pathLengths[4], msg: "PARTY TIME! 🪩" },
+          { yA: waypoints[4].y + 165, yB: waypoints[5].y,       lA: pathLengths[4], lB: pathLengths[5], msg: "TO THE MANDAP! 💐" }
+        ];
+        for (const s of segs){
+          if (focusY >= s.yA && focusY <= s.yB){
+            const t = (focusY - s.yA) / Math.max(1, s.yB - s.yA);
+            const smoothT = t * t * (3 - 2 * t);
+            nextLen = s.lA + smoothT * (s.lB - s.lA);
+            nextMsg = s.msg;
+            break;
+          }
         }
       }
+      targetArcLen = nextLen;
+      goalWalkingMsg = nextMsg;
     }
 
-    targetArcLen = nextLen;
-    goalWalkingMsg = nextMsg;
-    if (forceStation){ currentArcLen = targetArcLen; renderActorFrame(); }
-    else ensureTick();
+    // Detect if the user just did a rapid full-screen flick (remaining path distance > 420px or single scroll jump > 55% of screen)
+    const arcGap = Math.abs(targetArcLen - currentArcLen);
+    if (!forceStation && (scrollDelta > vh * 0.55 || arcGap > 420)){
+      isRapidLeap = true;
+    }
+
+    if (forceStation){
+      currentArcLen = targetArcLen;
+      isRapidLeap = false;
+      renderActorFrame(false, 0);
+    } else {
+      ensureTick();
+    }
   }
 
   function ensureTick(){
-    if (!rafId) rafId = requestAnimationFrame(tickLerp);
-  }
-
-  function tickLerp(){
-    rafId = null;
-    const diff = targetArcLen - currentArcLen;
-    if (Math.abs(diff) > 0.6){
-      // Smoothly glide toward targetArcLen (never teleports, even if scrolling fast)
-      const step = diff * 0.14;
-      currentArcLen += step;
-      walkDistance += Math.abs(step) * 0.65;
-      renderActorFrame(true);
+    if (!rafId){
+      lastFrameTime = performance.now();
       rafId = requestAnimationFrame(tickLerp);
-    } else {
-      currentArcLen = targetArcLen;
-      renderActorFrame(false);
     }
   }
 
-  function renderActorFrame(isGliding){
+  function tickLerp(now){
+    rafId = null;
+    const dt = Math.min(40, Math.max(8, now - lastFrameTime));
+    lastFrameTime = now;
+
+    const diff = targetArcLen - currentArcLen;
+    const absDiff = Math.abs(diff);
+
+    if (absDiff > 0.8){
+      // Faster catch-up factor during rapid leap (0.24) vs smooth natural walk/trot (0.16)
+      const factor = isRapidLeap ? 0.24 : 0.16;
+      const step = diff * factor;
+      currentArcLen += step;
+      const speedPxPerFrame = Math.abs(step);
+      renderActorFrame(true, speedPxPerFrame, now);
+      rafId = requestAnimationFrame(tickLerp);
+    } else {
+      currentArcLen = targetArcLen;
+      isRapidLeap = false;
+      renderActorFrame(false, 0, now);
+    }
+  }
+
+  function renderActorFrame(isGliding, speedPxPerFrame, now){
     const distRemaining = Math.abs(targetArcLen - currentArcLen);
-    const activelyMoving = isGliding && distRemaining > 2.2;
+    const activelyMoving = isGliding && distRemaining > 2.0;
 
     if (activelyMoving || !goalStation){
-      // While moving toward the destination point (including the final Shubh Vivah corner),
-      // keep walking in stride until they physically arrive at the point and sit!
-      placeAtLength(currentArcLen, true);
-      actor.dataset.mode = "walk";
-      const stepFrame = ((walkDistance / 22) | 0) % 2 === 0 ? "walk1" : "walk2";
-      showPose(stepFrame);
-      bubble.textContent = goalStation ? goalStation.msg : goalWalkingMsg;
+      placeAtLength(currentArcLen, true, isRapidLeap, distRemaining);
+
+      if (isRapidLeap && distRemaining > 45){
+        // Rapid full-screen scroll: expressive leap/pounce to destination without frantic image strobing!
+        actor.dataset.mode = "leap";
+        showPose("walk1");
+        bubble.textContent = goalStation ? goalStation.msg : "WHEEE! 🐾✨";
+      } else {
+        // Normal or brisk scroll: time-governed stride cadence (never glitches or strobes!)
+        isRapidLeap = false;
+        actor.dataset.mode = "walk";
+        // Cadence scales smoothly from 210ms (gentle stroll) down to 115ms (brisk trot)
+        const stepInterval = Math.max(115, Math.min(210, 220 - speedPxPerFrame * 6.5));
+        actor.style.setProperty("--walk-dur", (stepInterval * 1.15 / 1000).toFixed(2) + "s");
+
+        const tNow = now || performance.now();
+        if (tNow - lastStepToggleTime >= stepInterval){
+          stepToggleState = !stepToggleState;
+          lastStepToggleTime = tNow;
+        }
+        showPose(stepToggleState ? "walk2" : "walk1");
+        bubble.textContent = goalStation ? goalStation.msg : goalWalkingMsg;
+      }
 
       if (!activelyMoving){
         clearTimeout(idleTimer);
         idleTimer = setTimeout(()=>{
-          if (actor.dataset.mode === "walk" && !rafId){
+          if ((actor.dataset.mode === "walk" || actor.dataset.mode === "leap") && !rafId){
             actor.dataset.mode = "idle";
           }
-        }, 160);
+        }, 140);
       }
     } else {
       // Arrived at the station point -> sit (or dance at Sangeet) and put on the station outfit!
-      placeAtLength(currentArcLen, false);
+      placeAtLength(currentArcLen, false, false, 0);
       actor.dataset.mode = goalStation.mode;
       showPose(goalStation.pose);
       bubble.textContent = goalStation.msg;
     }
   }
 
-  function placeAtLength(len, isWalking){
+  function placeAtLength(len, isWalking, leaping, distRemaining){
     const clamped = Math.max(0, Math.min(totalLen, len));
     const pt = trailDash.getPointAtLength(clamped);
     const ptAhead = trailDash.getPointAtLength(Math.min(totalLen, clamped + 6));
     const dx = ptAhead.x - pt.x;
     const w = actor.offsetWidth || 165;
     const h = actor.offsetHeight || 165;
-    const tilt = isWalking ? Math.max(-6, Math.min(6, dx * 1.1)) : 0;
-    actor.style.transform = `translate3d(${(pt.x - w * 0.5).toFixed(1)}px, ${(pt.y - h * 0.62).toFixed(1)}px, 0) rotate(${tilt.toFixed(1)}deg)`;
+    const tilt = isWalking ? Math.max(-7, Math.min(7, dx * 1.2)) : 0;
+    const leapLift = leaping ? Math.min(28, distRemaining * 0.08) : 0;
+
+    // Anchor cats at (pt.y - h * 0.72). When walking between scenes, keep them inside the viewport;
+    // when parked at a station (Haldi / Mehendi / Sangeet / Wedding), let them rest at their exact
+    // station spot below the card so they NEVER get pushed up over the card's [Venue Name]!
+    let topY = pt.y - h * 0.72 - leapLift;
+    const isParkedAtStation = goalStation && !isWalking;
+    if (window.scrollY > 40 && !isParkedAtStation){
+      const vh = window.innerHeight;
+      const maxVisibleTopY = window.scrollY + vh - h - 18;
+      const minVisibleTopY = window.scrollY + 48;
+      topY = Math.max(minVisibleTopY, Math.min(maxVisibleTopY, topY));
+    }
+
+    actor.style.transform = `translate3d(${(pt.x - w * 0.5).toFixed(1)}px, ${topY.toFixed(1)}px, 0) rotate(${tilt.toFixed(1)}deg)`;
   }
 
   window.addEventListener("scroll", ()=>updateOnScroll(false), { passive: true });

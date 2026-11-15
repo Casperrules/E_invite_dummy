@@ -567,12 +567,12 @@ h2{
    ========================================================= */
 .event-scene{
   position:relative;
-  min-height:105vh;
+  min-height:112vh;
   display:flex;
   flex-direction:column;
-  justify-content:center;
+  justify-content:flex-start;
   align-items:center;
-  padding:80px 22px 150px;
+  padding:72px 22px 245px; /* generous bottom room so corner/dancing cats + speech bubble never touch the card */
   overflow:hidden;
 }
 
@@ -708,8 +708,8 @@ h2{
 
 /* ----- SCENE 4: SANGEET & RECEPTION (ROYAL BLUE & SILVER PARTY) ----- */
 #scene-sangeet{
-  min-height:125vh;
-  padding:75px 20px 260px; /* space at center-bottom dancefloor for the dancing cats */
+  min-height:128vh;
+  padding:68px 20px 110px;
   background:
     linear-gradient(180deg,#13284c 0%,rgba(6,15,38,.55) 18%,rgba(6,15,38,.45) 75%,#182442 92%,#fbe7ee 100%),
     url("assets/sangeet-bg.jpg") center/cover no-repeat;
@@ -780,7 +780,7 @@ h2{
 .dance-floor-spot{
   position:relative;
   z-index:4;
-  margin-top:26px;
+  margin-top:215px; /* pushes dancefloor well below the Sangeet card so cats + speech bubble never overlap the card */
   width:240px;height:66px;
   border-radius:50%;
   background:radial-gradient(ellipse at center,rgba(165,210,255,.65) 0%,rgba(100,160,255,.28) 52%,transparent 75%);
@@ -794,8 +794,8 @@ h2{
 
 /* ----- SCENE 5: THE MAIN WEDDING (MANDAP + BRIDE & GROOM IN CENTER + CATS IN TOP CORNER) ----- */
 #scene-wedding{
-  min-height:122vh;
-  padding:125px 18px 80px; /* top room for the cats sitting in the top corner */
+  min-height:125vh;
+  padding:175px 18px 80px; /* ample top room for the cats + bubble sitting in the top corner */
   background:
     linear-gradient(180deg,#fbe7ee 0%,#fff5f8 25%,#ffffff 100%);
 }
@@ -1622,24 +1622,24 @@ const CatJourney = (()=>{
       y: inviteEl.offsetTop + inviteEl.offsetHeight * 0.52,
       station: "walk"
     };
-    const p1 = { // Scene 2: Bottom-right corner of Haldi
+    const p1 = { // Scene 2: Bottom-right corner of Haldi (well below the Haldi card)
       x: rightX,
-      y: haldiEl.offsetTop + haldiEl.offsetHeight - 92,
+      y: haldiEl.offsetTop + haldiEl.offsetHeight - 62,
       station: "haldi"
     };
-    const p2 = { // Scene 3: Bottom-left corner of Mehendi
+    const p2 = { // Scene 3: Bottom-left corner of Mehendi (well below the Mehendi card)
       x: leftX,
-      y: mehendiEl.offsetTop + mehendiEl.offsetHeight - 92,
+      y: mehendiEl.offsetTop + mehendiEl.offsetHeight - 62,
       station: "mehendi"
     };
-    const p3 = { // Scene 4: Center dancefloor of Sangeet!
+    const p3 = { // Scene 4: Center dancefloor of Sangeet (well below the Sangeet card)
       x: midX,
-      y: sangeetEl.offsetTop + danceSpot.offsetTop + 6,
+      y: sangeetEl.offsetTop + danceSpot.offsetTop + 36,
       station: "sangeet"
     };
-    const p4 = { // Scene 5: Top-right corner of Main Wedding scene!
+    const p4 = { // Scene 5: Top-right corner of Main Wedding scene (above the Mandap card)
       x: rightX,
-      y: weddingEl.offsetTop + 72,
+      y: weddingEl.offsetTop + 98,
       station: "wedding"
     };
 
